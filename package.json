@@ -8,7 +8,10 @@
   ],
   "license": "MIT",
   "main": "index.js",
+  "module": "dist/dagre.es.js",
+  "type": "module",
   "scripts": {
+    "build": "rollup --config",
     "lint": "make lint",
     "test": "make test"
   },
@@ -27,6 +30,7 @@
     "@dagrejs/graphlib": "2.1.13"
   },
   "devDependencies": {
+    "@rollup/plugin-commonjs": "^25.0.2",
     "benchmark": "2.1.4",
     "browserify": "17.0.0",
     "chai": "4.3.6",
@@ -42,6 +46,7 @@
     "mocha": "10.1.0",
     "nyc": "^15.1.0",
     "requirejs": "2.3.6",
+    "rollup": "^3.26.1",
     "semver": "7.3.7",
     "sprintf": "0.1.5",
     "uglify-js": "3.17.4"
