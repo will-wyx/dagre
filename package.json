@@ -11,7 +11,8 @@
   "module": "dist/dagre.es.js",
   "type": "module",
   "scripts": {
-    "build": "rollup --config"
+    "build": "rollup --config",
+    "demo": "cd demo && npm run dev"
   },
   "files": [
     "index.js",

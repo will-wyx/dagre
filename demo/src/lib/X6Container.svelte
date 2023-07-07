@@ -2,7 +2,7 @@
   import {onMount} from "svelte";
   import {Graph} from "@antv/x6";
   import graphData from "../data/graphData.js";
-  import dagre from '../../../';
+  import dagre from 'dagre';
 
 
   let container;
