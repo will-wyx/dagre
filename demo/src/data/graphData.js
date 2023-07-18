@@ -30,11 +30,6 @@ const data = {
             width: 50, height: 40
         },
         {
-            id: 'E', label: 'E',
-            "width": 550, "height": 435,
-            // children: ['1', '2', '3', '4', '5', '6', '7']
-        },
-        {
             id: 'F', label: 'F',
             width: 50, height: 40
         },
@@ -42,6 +37,15 @@ const data = {
             id: 'G', label: 'G',
             "width": 725, "height": 200,
             // children: ['A', 'B', 'C', 'X', 'Y']
+        },
+        {
+            id: 'H', label: 'H',
+            width: 50, height: 40
+        },
+        {
+            id: 'E', label: 'E',
+            "width": 550, "height": 435,
+            // children: ['1', '2', '3', '4', '5', '6', '7']
         },
         // {
         //     id: '1', label: '1',
@@ -87,6 +91,7 @@ const data = {
         {source: 'D', target: 'E'},
         {source: 'E', target: 'F'},
         {source: 'D', target: 'G'},
+        {source: 'D', target: 'H'},
         // {source: '1', target: '2'},
         // {source: '1', target: '3'},
         // {source: 'A', target: '1'},
@@ -96,4 +101,45 @@ const data = {
     ],
 }
 
-export default data
+const prevData = {
+    nodes: [
+        {
+            id: 'D', label: 'D',
+            width: 50, height: 40,
+            rank: 0,
+            _order: 0
+        },
+        {
+            id: 'F', label: 'F',
+            width: 50, height: 40,
+            rank: 4,
+            _order: 0
+        },
+        {
+            id: 'H', label: 'H',
+            width: 50, height: 40,
+            rank: 2,
+            _order: 0
+        },
+        {
+            id: 'G', label: 'G',
+            "width": 725, "height": 200,
+            rank: 2,
+            _order: 0
+        },
+        {
+            id: 'E', label: 'E',
+            "width": 550, "height": 435,
+            rank: 2,
+            _order: 0
+        },
+    ],
+    edges: [
+        {source: 'D', target: 'E'},
+        {source: 'E', target: 'F'},
+        {source: 'D', target: 'G'},
+        {source: 'D', target: 'H'},
+    ],
+}
+
+export {data, prevData}

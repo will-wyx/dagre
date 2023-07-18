@@ -1,7 +1,7 @@
 <script>
   import {onMount} from "svelte";
   import {Graph} from "@antv/x6";
-  import graphData from "../data/graphData.js";
+  import {data, prevData} from "../data/graphData.js";
   import dagre from 'dagre';
 
 
@@ -27,15 +27,31 @@
       })
       .setDefaultEdgeLabel(() => ({}));
 
-    graphData.nodes.forEach(node => {
+    data.nodes.forEach(node => {
       const {id, label, width, height} = node;
       g.setNode(id, {id, label, width, height});
     });
 
-    graphData.edges.forEach(edge => {
+    data.edges.forEach(edge => {
       const {source, target} = edge;
       g.setEdge(source, target);
     });
+
+    // const prevGraph = new dagre.graphlib.Graph({compound: true})
+    //   .setGraph({
+    //     rankdir: 'LR',
+    //   })
+    //   .setDefaultEdgeLabel(() => ({}));
+    //
+    // prevData.nodes.forEach(node => {
+    //   const {id, label, width, height, _order} = node;
+    //   prevGraph.setNode(id, {id, label, width, height, _order});
+    // });
+    //
+    // prevData.edges.forEach(edge => {
+    //   const {source, target} = edge;
+    //   prevGraph.setEdge(source, target);
+    // });
 
     dagre.layout(g);
 

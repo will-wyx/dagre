@@ -2804,6 +2804,18 @@ function initOrder$1(g) {
   }
 
   var orderedVs = simpleNodes.sort((a, b) => g.node(a).rank - g.node(b).rank);
+
+  // 有fixOrder的，直接排序好放进去
+  const beforeSort = orderedVs.filter(n => g.node(n).fixorder !== undefined);
+  const fixOrderNodes = beforeSort.sort((a, b) => g.node(a) - g.node(b));
+  fixOrderNodes.forEach(n => {
+    const rank = g.node(n).rank;
+    if (!isNaN(rank)) {
+      layers[rank].push(n);
+    }
+    visited[n] = true;
+  });
+
   orderedVs.forEach(dfs);
 
   return layers;
@@ -3021,8 +3033,11 @@ var util$6 = util$d;
 
 var sort_1 = sort$1;
 
-function sort$1(entries, biasRight) {
+function sort$1(entries, biasRight, usePrev, keepNodeOrder) {
   var parts = util$6.partition(entries, entry => {
+    const notHasFixOrder = !(entry.hasOwnProperty('fixorder') && !isNaN(entry.fixorder));
+    if (keepNodeOrder)
+      return notHasFixOrder && entry.hasOwnProperty("barycenter");
     return entry.hasOwnProperty("barycenter");
   });
   var sortable = parts.lhs,
@@ -3032,7 +3047,7 @@ function sort$1(entries, biasRight) {
     weight = 0,
     vsIndex = 0;
 
-  sortable.sort(compareWithBias(!!biasRight));
+  sortable.sort(compareWithBias(!!biasRight, !!usePrev));
 
   vsIndex = consumeUnsortable(vs, unsortable, vsIndex);
 
@@ -3044,7 +3059,7 @@ function sort$1(entries, biasRight) {
     vsIndex = consumeUnsortable(vs, unsortable, vsIndex);
   });
 
-  var result = { vs: vs.flat(true) };
+  var result = {vs: vs.flat(true)};
   if (weight) {
     result.barycenter = sum / weight;
     result.weight = weight;
@@ -3062,13 +3077,25 @@ function consumeUnsortable(vs, unsortable, index) {
   return index;
 }
 
-function compareWithBias(bias) {
+function compareWithBias(bias, usePrev) {
   return (entryV, entryW) => {
-    if (entryV.barycenter < entryW.barycenter) {
+    // 排序的时候先判断fixorder，不行再判断重心
+    if (entryV.fixorder !== undefined && entryW.fixorder !== undefined) {
+      return entryV.fixorder - entryW.fixorder;
+    } else if (entryV.barycenter < entryW.barycenter) {
       return -1;
     } else if (entryV.barycenter > entryW.barycenter) {
       return 1;
     }
+    // 重心相同，考虑之前排好的顺序
+    if (usePrev && entryV.order !== undefined && entryW.order !== undefined) {
+      if (entryV.order < entryW.order) {
+        return -1;
+      } else if (entryV.order > entryW.order) {
+        return 1;
+      }
+    }
+
 
     return !bias ? entryV.i - entryW.i : entryW.i - entryV.i;
   };
@@ -3080,7 +3107,7 @@ var sort = sort_1;
 
 var sortSubgraph_1 = sortSubgraph$1;
 
-function sortSubgraph$1(g, v, cg, biasRight) {
+function sortSubgraph$1(g, v, cg, biasRight, usePrev, keepNodeOrder) {
   var movable = g.children(v);
   var node = g.node(v);
   var bl = node ? node.borderLeft : undefined;
@@ -3094,7 +3121,7 @@ function sortSubgraph$1(g, v, cg, biasRight) {
   var barycenters = barycenter(g, movable);
   barycenters.forEach(entry => {
     if (g.children(entry.v).length) {
-      var subgraphResult = sortSubgraph$1(g, entry.v, cg, biasRight);
+      var subgraphResult = sortSubgraph$1(g, entry.v, cg, biasRight, keepNodeOrder);
       subgraphs[entry.v] = subgraphResult;
       if (subgraphResult.hasOwnProperty("barycenter")) {
         mergeBarycenters(entry, subgraphResult);
@@ -3105,7 +3132,18 @@ function sortSubgraph$1(g, v, cg, biasRight) {
   var entries = resolveConflicts(barycenters, cg);
   expandSubgraphs(entries, subgraphs);
 
-  var result = sort(entries, biasRight);
+  // 添加fixorder信息到entries里边
+  entries
+    .filter(e => e.vs.length > 0)
+    ?.forEach(e => {
+      const node = g.node(e.vs[0]);
+      if (node) {
+        e.fixorder = node.fixorder;
+        e.order = node.order;
+      }
+    });
+
+  var result = sort(entries, biasRight, usePrev, keepNodeOrder);
 
   if (bl) {
     result.vs = [bl, result.vs, br].flat(true);
@@ -3299,7 +3337,7 @@ var order_1 = order$1;
  *    1. Graph nodes will have an "order" attribute based on the results of the
  *       algorithm.
  */
-function order$1(g) {
+function order$1(g, keepNodeOrder) {
   var maxRank = util$4.maxRank(g),
     downLayerGraphs = buildLayerGraphs(g, util$4.range(1, maxRank + 1), "inEdges"),
     upLayerGraphs = buildLayerGraphs(g, util$4.range(maxRank - 1, -1, -1), "outEdges");
@@ -3311,7 +3349,7 @@ function order$1(g) {
     best;
 
   for (var i = 0, lastBest = 0; lastBest < 4; ++i, ++lastBest) {
-    sweepLayerGraphs(i % 2 ? downLayerGraphs : upLayerGraphs, i % 4 >= 2);
+    sweepLayerGraphs(i % 2 ? downLayerGraphs : upLayerGraphs, i % 4 >= 2, false, keepNodeOrder);
 
     layering = util$4.buildLayerMatrix(g);
     var cc = crossCount(g, layering);
@@ -3331,11 +3369,11 @@ function buildLayerGraphs(g, ranks, relationship) {
   });
 }
 
-function sweepLayerGraphs(layerGraphs, biasRight) {
+function sweepLayerGraphs(layerGraphs, biasRight, usePrev, keepNodeOrder) {
   var cg = new Graph$3();
   layerGraphs.forEach(function(lg) {
     var root = lg.graph().root;
-    var sorted = sortSubgraph(lg, root, cg, biasRight);
+    var sorted = sortSubgraph(lg, root, cg, biasRight, usePrev, keepNodeOrder);
     sorted.vs.forEach((v, i) => lg.node(v).order = i);
     addSubgraphConstraints(lg, cg, sorted.vs);
   });
@@ -3815,42 +3853,94 @@ var layout_1 = layout;
 function layout(g, opts) {
   var time = opts && opts.debugTiming ? util$1.time : util$1.notime;
   time("layout", () => {
+    // 如果在原图基础上修改，继承原图的order结果
+    if (opts && !opts.keepNodeOrder && opts.prevGraph) {
+      time("  inheritOrder", () => inheritOrder(g, opts.prevGraph));
+    }
+
     var layoutGraph =
       time("  buildLayoutGraph", () => buildLayoutGraph(g));
-    time("  runLayout",        () => runLayout(layoutGraph, time));
+    time("  runLayout", () => runLayout(layoutGraph, time, opts));
     time("  updateInputGraph", () => updateInputGraph(g, layoutGraph));
   });
 }
 
-function runLayout(g, time) {
+function runLayout(g, time, opts) {
   time("    makeSpaceForEdgeLabels", () => makeSpaceForEdgeLabels(g));
-  time("    removeSelfEdges",        () => removeSelfEdges(g));
-  time("    acyclic",                () => acyclic.run(g));
-  time("    nestingGraph.run",       () => nestingGraph.run(g));
-  time("    rank",                   () => rank(util$1.asNonCompoundGraph(g)));
+  time("    removeSelfEdges", () => removeSelfEdges(g));
+  time("    acyclic", () => acyclic.run(g));
+  time("    nestingGraph.run", () => nestingGraph.run(g));
+  time("    rank", () => rank(util$1.asNonCompoundGraph(g)));
   time("    injectEdgeLabelProxies", () => injectEdgeLabelProxies(g));
-  time("    removeEmptyRanks",       () => removeEmptyRanks(g));
-  time("    nestingGraph.cleanup",   () => nestingGraph.cleanup(g));
-  time("    normalizeRanks",         () => normalizeRanks(g));
-  time("    assignRankMinMax",       () => assignRankMinMax(g));
+  time("    removeEmptyRanks", () => removeEmptyRanks(g));
+  time("    nestingGraph.cleanup", () => nestingGraph.cleanup(g));
+  time("    normalizeRanks", () => normalizeRanks(g));
+  time("    assignRankMinMax", () => assignRankMinMax(g));
   time("    removeEdgeLabelProxies", () => removeEdgeLabelProxies(g));
-  time("    normalize.run",          () => normalize.run(g));
-  time("    parentDummyChains",      () => parentDummyChains(g));
-  time("    addBorderSegments",      () => addBorderSegments(g));
-  time("    order",                  () => order(g));
-  time("    insertSelfEdges",        () => insertSelfEdges(g));
+  time("    normalize.run", () => normalize.run(g));
+  time("    parentDummyChains", () => parentDummyChains(g));
+  time("    addBorderSegments", () => addBorderSegments(g));
+  if (opts && opts.keepNodeOrder) {
+    time("initDataOrder", () => initDataOrder(g, opts.nodeOrder));
+  }
+  time("    order", () => order(g, opts?.keepNodeOrder));
+  time("    insertSelfEdges", () => insertSelfEdges(g));
   time("    adjustCoordinateSystem", () => coordinateSystem.adjust(g));
-  time("    position",               () => position(g));
-  time("    positionSelfEdges",      () => positionSelfEdges(g));
-  time("    removeBorderNodes",      () => removeBorderNodes(g));
-  time("    normalize.undo",         () => normalize.undo(g));
-  time("    fixupEdgeLabelCoords",   () => fixupEdgeLabelCoords(g));
-  time("    undoCoordinateSystem",   () => coordinateSystem.undo(g));
-  time("    translateGraph",         () => translateGraph(g));
-  time("    assignNodeIntersects",   () => assignNodeIntersects(g));
-  time("    reversePoints",          () => reversePointsForReversedEdges(g));
-  time("    acyclic.undo",           () => acyclic.undo(g));
+  time("    position", () => position(g));
+  time("    positionSelfEdges", () => positionSelfEdges(g));
+  time("    removeBorderNodes", () => removeBorderNodes(g));
+  time("    normalize.undo", () => normalize.undo(g));
+  time("    fixupEdgeLabelCoords", () => fixupEdgeLabelCoords(g));
+  time("    undoCoordinateSystem", () => coordinateSystem.undo(g));
+  time("    translateGraph", () => translateGraph(g));
+  time("    assignNodeIntersects", () => assignNodeIntersects(g));
+  time("    reversePoints", () => reversePointsForReversedEdges(g));
+  time("    acyclic.undo", () => acyclic.undo(g));
 }
+
+/**
+ * 继承上一个布局中的order，防止翻转
+ */
+const inheritOrder = (currG, prevG) => {
+  console.log('inherit');
+  currG.nodes().forEach(n => {
+    const node = currG.node(n);
+    const prevNode = prevG.node(n);
+    if (prevNode !== undefined) {
+      node.fixorder = prevNode._order;
+      delete prevNode._order;
+    } else {
+      delete node.fixorder;
+    }
+  });
+};
+
+/**
+ * 按照数据中的结果设置fixorder
+ */
+const initDataOrder = (g, nodeOrder) => {
+  const simpleNodes = g.nodes().filter((v) => {
+    return !g.children(v)?.length;
+  });
+  const ranks = simpleNodes.map((v) => g.node(v).rank);
+  const maxRank = Math.max(...ranks);
+  const layers = [];
+  for (let i = 0; i < maxRank + 1; i++) {
+    layers[i] = [];
+  }
+
+  nodeOrder?.forEach((n) => {
+    const node = g.node(n);
+    // 只考虑原有节点，dummy节点需要按照后续算法排出
+    if (!node || node?.dummy) {
+      return;
+    }
+    if (!isNaN(node.rank)) {
+      node.fixorder = layers[node.rank].length; // 设置fixorder为当层的顺序
+      layers[node.rank].push(n);
+    }
+  });
+};
 
 /*
  * Copies final layout information from the layout graph back to the input
@@ -3866,6 +3956,7 @@ function updateInputGraph(inputGraph, layoutGraph) {
     if (inputLabel) {
       inputLabel.x = layoutLabel.x;
       inputLabel.y = layoutLabel.y;
+      inputLabel._order = layoutLabel.order;
       inputLabel.rank = layoutLabel.rank;
 
       if (layoutGraph.children(v).length) {
@@ -3891,10 +3982,10 @@ function updateInputGraph(inputGraph, layoutGraph) {
 }
 
 var graphNumAttrs = ["nodesep", "edgesep", "ranksep", "marginx", "marginy"];
-var graphDefaults = { ranksep: 50, edgesep: 20, nodesep: 50, rankdir: "tb" };
+var graphDefaults = {ranksep: 50, edgesep: 20, nodesep: 50, rankdir: "tb"};
 var graphAttrs = ["acyclicer", "ranker", "rankdir", "align"];
-var nodeNumAttrs = ["width", "height"];
-var nodeDefaults = { width: 0, height: 0 };
+var nodeNumAttrs = ["width", "height", "fixorder"];
+var nodeDefaults = {width: 0, height: 0};
 var edgeNumAttrs = ["minlen", "weight", "width", "height", "labeloffset"];
 var edgeDefaults = {
   minlen: 1, weight: 1, width: 0, height: 0,
@@ -3909,7 +4000,7 @@ var edgeAttrs = ["labelpos"];
  * attributes can influence layout.
  */
 function buildLayoutGraph(inputGraph) {
-  var g = new Graph$1({ multigraph: true, compound: true });
+  var g = new Graph$1({multigraph: true, compound: true});
   var graph = canonicalize(inputGraph.graph());
 
   g.setGraph(Object.assign({},
@@ -3977,7 +4068,7 @@ function injectEdgeLabelProxies(g) {
     if (edge.width && edge.height) {
       var v = g.node(e.v);
       var w = g.node(e.w);
-      var label = { rank: (w.rank - v.rank) / 2 + v.rank, e: e };
+      var label = {rank: (w.rank - v.rank) / 2 + v.rank, e: e};
       util$1.addDummyNode(g, "edge-proxy", label, "_ep");
     }
   });
@@ -4049,8 +4140,12 @@ function translateGraph(g) {
       p.x -= minX;
       p.y -= minY;
     });
-    if (edge.hasOwnProperty("x")) { edge.x -= minX; }
-    if (edge.hasOwnProperty("y")) { edge.y -= minY; }
+    if (edge.hasOwnProperty("x")) {
+      edge.x -= minX;
+    }
+    if (edge.hasOwnProperty("y")) {
+      edge.y -= minY;
+    }
   });
 
   graphLabel.width = maxX - minX + marginX;
@@ -4084,8 +4179,12 @@ function fixupEdgeLabelCoords(g) {
         edge.width -= edge.labeloffset;
       }
       switch (edge.labelpos) {
-      case "l": edge.x -= edge.width / 2 + edge.labeloffset; break;
-      case "r": edge.x += edge.width / 2 + edge.labeloffset; break;
+      case "l":
+        edge.x -= edge.width / 2 + edge.labeloffset;
+        break;
+      case "r":
+        edge.x += edge.width / 2 + edge.labeloffset;
+        break;
       }
     }
   });
@@ -4130,7 +4229,7 @@ function removeSelfEdges(g) {
       if (!node.selfEdges) {
         node.selfEdges = [];
       }
-      node.selfEdges.push({ e: e, label: g.edge(e) });
+      node.selfEdges.push({e: e, label: g.edge(e)});
       g.removeEdge(e);
     }
   });
@@ -4170,11 +4269,11 @@ function positionSelfEdges(g) {
       g.setEdge(node.e, node.label);
       g.removeNode(v);
       node.label.points = [
-        { x: x + 2 * dx / 3, y: y - dy },
-        { x: x + 5 * dx / 6, y: y - dy },
-        { x: x +     dx    , y: y },
-        { x: x + 5 * dx / 6, y: y + dy },
-        { x: x + 2 * dx / 3, y: y + dy }
+        {x: x + 2 * dx / 3, y: y - dy},
+        {x: x + 5 * dx / 6, y: y - dy},
+        {x: x + dx, y: y},
+        {x: x + 5 * dx / 6, y: y + dy},
+        {x: x + 2 * dx / 3, y: y + dy}
       ];
       node.label.x = node.x;
       node.label.y = node.y;
